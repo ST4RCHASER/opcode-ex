@@ -729,6 +729,51 @@ pub async fn check_claude_version(app: AppHandle) -> Result<ClaudeVersionStatus,
     }
 }
 
+/// Represents a model available for use
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    /// Short model identifier (e.g., "sonnet", "opus")
+    pub id: String,
+    /// Display name (e.g., "Claude Sonnet 4")
+    pub name: String,
+    /// Brief description
+    pub description: String,
+}
+
+/// Default/fallback model list when CLI discovery fails
+pub fn default_model_list() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            id: "default".to_string(),
+            name: "Default (recommended)".to_string(),
+            description: "Opus 4.6 with 1M context".to_string(),
+        },
+        ModelInfo {
+            id: "sonnet".to_string(),
+            name: "Sonnet 4.6".to_string(),
+            description: "Best for everyday tasks".to_string(),
+        },
+        ModelInfo {
+            id: "opus".to_string(),
+            name: "Opus 4.6".to_string(),
+            description: "200K context".to_string(),
+        },
+        ModelInfo {
+            id: "haiku".to_string(),
+            name: "Haiku 4.5".to_string(),
+            description: "Fastest for quick answers".to_string(),
+        },
+    ]
+}
+
+/// Lists available models.
+/// Returns the known model list. When Claude CLI adds a `models list` command
+/// in the future, this can be extended to fetch dynamically.
+#[tauri::command]
+pub async fn list_available_models(_app: AppHandle) -> Result<Vec<ModelInfo>, String> {
+    Ok(default_model_list())
+}
+
 /// Saves the CLAUDE.md system prompt file
 #[tauri::command]
 pub async fn save_system_prompt(content: String) -> Result<String, String> {
@@ -932,16 +977,21 @@ pub async fn execute_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
+    let mut args = vec![
         "-p".to_string(),
         prompt.clone(),
-        "--model".to_string(),
-        model.clone(),
+    ];
+    // Pass model to --model flag; "default" is a valid Claude CLI value (Opus 4.6 1M)
+    if !model.is_empty() {
+        args.push("--model".to_string());
+        args.push(model.clone());
+    }
+    args.extend([
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
         "--dangerously-skip-permissions".to_string(),
-    ];
+    ]);
 
     let cmd = create_system_command(&claude_path, args, &project_path);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
@@ -963,17 +1013,21 @@ pub async fn continue_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
+    let mut args = vec![
         "-c".to_string(), // Continue flag
         "-p".to_string(),
         prompt.clone(),
-        "--model".to_string(),
-        model.clone(),
+    ];
+    if !model.is_empty() && model != "default" {
+        args.push("--model".to_string());
+        args.push(model.clone());
+    }
+    args.extend([
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
         "--dangerously-skip-permissions".to_string(),
-    ];
+    ]);
 
     let cmd = create_system_command(&claude_path, args, &project_path);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
@@ -997,18 +1051,22 @@ pub async fn resume_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
+    let mut args = vec![
         "--resume".to_string(),
         session_id.clone(),
         "-p".to_string(),
         prompt.clone(),
-        "--model".to_string(),
-        model.clone(),
+    ];
+    if !model.is_empty() && model != "default" {
+        args.push("--model".to_string());
+        args.push(model.clone());
+    }
+    args.extend([
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
         "--dangerously-skip-permissions".to_string(),
-    ];
+    ]);
 
     let cmd = create_system_command(&claude_path, args, &project_path);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
@@ -1278,6 +1336,11 @@ async fn spawn_claude_process(
     let stderr_task = tokio::spawn(async move {
         let mut lines = stderr_reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            // Skip noisy stdin warning — prompt is passed via -p, not stdin
+            if line.contains("no stdin data received") {
+                log::debug!("Claude stderr (suppressed): {}", line);
+                continue;
+            }
             log::error!("Claude stderr: {}", line);
             // Emit error lines to the frontend with session isolation if we have session ID
             if let Some(ref session_id) = *session_id_holder_clone2.lock().unwrap() {

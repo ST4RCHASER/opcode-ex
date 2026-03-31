@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 interface QueuedPrompt {
   id: string;
   prompt: string;
-  model: "sonnet" | "opus";
+  model: string;
 }
 
 interface PromptQueueProps {
@@ -62,7 +62,7 @@ export const PromptQueue: React.FC<PromptQueueProps> = React.memo(({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm truncate">{queuedPrompt.prompt}</p>
                   <span className="text-xs text-muted-foreground">
-                    {queuedPrompt.model === "opus" ? "Opus" : "Sonnet"}
+                    {queuedPrompt.model}
                   </span>
                 </div>
                 

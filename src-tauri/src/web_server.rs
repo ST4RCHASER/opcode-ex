@@ -143,7 +143,7 @@ async fn get_usage() -> Json<ApiResponse<Vec<serde_json::Value>>> {
 async fn get_claude_settings() -> Json<ApiResponse<serde_json::Value>> {
     let default_settings = serde_json::json!({
         "data": {
-            "model": "claude-3-5-sonnet-20241022",
+            "model": "sonnet",
             "max_tokens": 8192,
             "temperature": 0.0,
             "auto_save": true,
@@ -175,6 +175,14 @@ async fn list_claude_installations(
     } else {
         Json(ApiResponse::success(installations))
     }
+}
+
+/// List available models
+async fn list_available_models() -> Json<ApiResponse<Vec<crate::commands::claude::ModelInfo>>> {
+    // In web mode we don't have an AppHandle, use the default list.
+    // The CLI-based discovery only works in the Tauri desktop app.
+    let models = crate::commands::claude::default_model_list();
+    Json(ApiResponse::success(models))
 }
 
 /// Get system prompt - return default for web mode
@@ -795,6 +803,7 @@ pub async fn create_web_server(port: u16) -> Result<(), Box<dyn std::error::Erro
             "/api/settings/claude/installations",
             get(list_claude_installations),
         )
+        .route("/api/models", get(list_available_models))
         .route("/api/settings/system-prompt", get(get_system_prompt))
         // Session management
         .route("/api/sessions/new", get(open_new_session))

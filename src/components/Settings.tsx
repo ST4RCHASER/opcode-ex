@@ -15,10 +15,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { 
-  api, 
+import {
+  api,
   type ClaudeSettings,
-  type ClaudeInstallation
+  type ClaudeInstallation,
+  type ModelInfo
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Toast, ToastContainer } from "@/components/ui/toast";
@@ -96,18 +97,28 @@ export const Settings: React.FC<SettingsProps> = ({
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   // Startup intro preference
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
+
+  // Default model state
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [defaultModel, setDefaultModel] = useState<string>("sonnet");
   
   // Load settings on mount
   useEffect(() => {
     loadSettings();
     loadClaudeBinaryPath();
     loadAnalyticsSettings();
+    loadAvailableModels();
     // Load tab persistence setting
     setTabPersistenceEnabled(TabPersistenceService.isEnabled());
     // Load startup intro setting (default to true if not set)
     (async () => {
       const pref = await api.getSetting('startup_intro_enabled');
       setStartupIntroEnabled(pref === null ? true : pref === 'true');
+    })();
+    // Load default model setting
+    (async () => {
+      const saved = await api.getSetting('default_model');
+      if (saved) setDefaultModel(saved);
     })();
   }, []);
 
@@ -118,6 +129,18 @@ export const Settings: React.FC<SettingsProps> = ({
     const settings = analytics.getSettings();
     if (settings) {
       setAnalyticsEnabled(settings.enabled);
+    }
+  };
+
+  /**
+   * Loads available models from the backend
+   */
+  const loadAvailableModels = async () => {
+    try {
+      const models = await api.listAvailableModels();
+      setAvailableModels(models);
+    } catch (err) {
+      console.error("Failed to load available models:", err);
     }
   };
 
@@ -665,6 +688,41 @@ export const Settings: React.FC<SettingsProps> = ({
                           Changes will be applied when you save settings.
                         </p>
                       )}
+                    </div>
+
+                    {/* Default Model */}
+                    <div className="space-y-2">
+                      <Label>Default Model</Label>
+                      <p className="text-caption text-muted-foreground">
+                        Choose the default model for new sessions and agents
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {availableModels.map((model) => (
+                          <button
+                            key={model.id}
+                            onClick={async () => {
+                              setDefaultModel(model.id);
+                              try {
+                                await api.saveSetting('default_model', model.id);
+                                setToast({ message: `Default model set to ${model.name}`, type: "success" });
+                              } catch (e) {
+                                setToast({ message: "Failed to save default model", type: "error" });
+                              }
+                            }}
+                            className={cn(
+                              "px-4 py-2.5 rounded-md border text-left transition-all",
+                              defaultModel === model.id
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border hover:border-primary/50 hover:bg-accent"
+                            )}
+                          >
+                            <div className="text-body-small font-medium">{model.name}</div>
+                            {model.description && (
+                              <div className="text-caption text-muted-foreground">{model.description}</div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     {/* Separator */}

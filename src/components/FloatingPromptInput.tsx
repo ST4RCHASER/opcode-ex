@@ -22,7 +22,7 @@ import { TooltipProvider, TooltipSimple, Tooltip, TooltipTrigger, TooltipContent
 import { FilePicker } from "./FilePicker";
 import { SlashCommandPicker } from "./SlashCommandPicker";
 import { ImagePreview } from "./ImagePreview";
-import { type FileEntry, type SlashCommand } from "@/lib/api";
+import { api, type FileEntry, type SlashCommand, type ModelInfo } from "@/lib/api";
 
 // Conditional import for Tauri webview window
 let tauriGetCurrentWebviewWindow: any;
@@ -41,7 +41,7 @@ interface FloatingPromptInputProps {
   /**
    * Callback when prompt is sent
    */
-  onSend: (prompt: string, model: "sonnet" | "opus") => void;
+  onSend: (prompt: string, model: string) => void;
   /**
    * Whether the input is loading
    */
@@ -53,7 +53,7 @@ interface FloatingPromptInputProps {
   /**
    * Default model to select
    */
-  defaultModel?: "sonnet" | "opus";
+  defaultModel?: string;
   /**
    * Project path for file picker
    */
@@ -172,33 +172,27 @@ const ThinkingModeIndicator: React.FC<{ level: number; color?: string }> = ({ le
   );
 };
 
-type Model = {
-  id: "sonnet" | "opus";
-  name: string;
-  description: string;
+type ModelDisplay = ModelInfo & {
   icon: React.ReactNode;
   shortName: string;
   color: string;
 };
 
-const MODELS: Model[] = [
-  {
-    id: "sonnet",
-    name: "Claude 4 Sonnet",
-    description: "Faster, efficient for most tasks",
-    icon: <Zap className="h-3.5 w-3.5" />,
-    shortName: "S",
-    color: "text-primary"
-  },
-  {
-    id: "opus",
-    name: "Claude 4 Opus",
-    description: "More capable, better for complex tasks",
-    icon: <Zap className="h-3.5 w-3.5" />,
-    shortName: "O",
-    color: "text-primary"
-  }
+const FALLBACK_MODELS: ModelInfo[] = [
+  { id: "default", name: "Default (recommended)", description: "Opus 4.6 with 1M context" },
+  { id: "sonnet", name: "Sonnet 4.6", description: "Best for everyday tasks" },
+  { id: "opus", name: "Opus 4.6", description: "200K context" },
+  { id: "haiku", name: "Haiku 4.5", description: "Fastest for quick answers" },
 ];
+
+function toModelDisplay(m: ModelInfo): ModelDisplay {
+  return {
+    ...m,
+    icon: <Zap className="h-3.5 w-3.5" />,
+    shortName: m.id.charAt(0).toUpperCase(),
+    color: "text-primary",
+  };
+}
 
 /**
  * FloatingPromptInput component - Fixed position prompt input with model picker
@@ -216,7 +210,7 @@ const FloatingPromptInputInner = (
     onSend,
     isLoading = false,
     disabled = false,
-    defaultModel = "sonnet",
+    defaultModel,
     projectPath,
     className,
     onCancel,
@@ -225,7 +219,9 @@ const FloatingPromptInputInner = (
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
   const [prompt, setPrompt] = useState("");
-  const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">(defaultModel);
+  const [models, setModels] = useState<ModelDisplay[]>(FALLBACK_MODELS.map(toModelDisplay));
+  const [selectedModel, setSelectedModel] = useState<string>(defaultModel ?? "default");
+  const defaultModelProp = defaultModel; // capture whether prop was explicitly passed
   const [selectedThinkingMode, setSelectedThinkingMode] = useState<ThinkingMode>("auto");
   const [isExpanded, setIsExpanded] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -272,6 +268,30 @@ const FloatingPromptInputInner = (
     }),
     [isExpanded]
   );
+
+  // Load available models and default model setting
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [fetched, savedDefault] = await Promise.all([
+          api.listAvailableModels(),
+          api.getSetting('default_model'),
+        ]);
+        if (cancelled) return;
+        if (fetched.length > 0) {
+          setModels(fetched.map(toModelDisplay));
+        }
+        // Apply saved default if no explicit prop was passed
+        if (savedDefault && !defaultModelProp) {
+          setSelectedModel(savedDefault);
+        }
+      } catch (e) {
+        // keep fallback models
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Helper function to check if a file is an image
   const isImageFile = (path: string): boolean => {
@@ -844,7 +864,7 @@ const FloatingPromptInputInner = (
     setPrompt(newPrompt.trim());
   };
 
-  const selectedModelData = MODELS.find(m => m.id === selectedModel) || MODELS[0];
+  const selectedModelData = models.find(m => m.id === selectedModel) || models[0];
 
   return (
     <TooltipProvider>
@@ -931,7 +951,7 @@ const FloatingPromptInputInner = (
                       }
                       content={
                         <div className="w-[300px] p-1">
-                          {MODELS.map((model) => (
+                          {models.map((model) => (
                             <button
                               key={model.id}
                               onClick={() => {
@@ -1114,7 +1134,7 @@ const FloatingPromptInputInner = (
                   }
                 content={
                   <div className="w-[300px] p-1">
-                    {MODELS.map((model) => (
+                    {models.map((model) => (
                       <button
                         key={model.id}
                         onClick={() => {

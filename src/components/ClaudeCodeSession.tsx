@@ -16,37 +16,8 @@ import { Popover } from "@/components/ui/popover";
 import { api, type Session } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-// Conditional imports for Tauri APIs
-let tauriListen: any;
+import { listen } from "@tauri-apps/api/event";
 type UnlistenFn = () => void;
-
-try {
-  if (typeof window !== 'undefined' && window.__TAURI__) {
-    tauriListen = require("@tauri-apps/api/event").listen;
-  }
-} catch (e) {
-  console.log('[ClaudeCodeSession] Tauri APIs not available, using web mode');
-}
-
-// Web-compatible replacements
-const listen = tauriListen || ((eventName: string, callback: (event: any) => void) => {
-  console.log('[ClaudeCodeSession] Setting up DOM event listener for:', eventName);
-
-  // In web mode, listen for DOM events
-  const domEventHandler = (event: any) => {
-    console.log('[ClaudeCodeSession] DOM event received:', eventName, event.detail);
-    // Simulate Tauri event structure
-    callback({ payload: event.detail });
-  };
-
-  window.addEventListener(eventName, domEventHandler);
-
-  // Return unlisten function
-  return Promise.resolve(() => {
-    console.log('[ClaudeCodeSession] Removing DOM event listener for:', eventName);
-    window.removeEventListener(eventName, domEventHandler);
-  });
-});
 import { StreamMessage } from "./StreamMessage";
 import { FloatingPromptInput, type FloatingPromptInputRef } from "./FloatingPromptInput";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -125,7 +96,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [forkSessionName, setForkSessionName] = useState("");
   
   // Queued prompts state
-  const [queuedPrompts, setQueuedPrompts] = useState<Array<{ id: string; prompt: string; model: "sonnet" | "opus" }>>([]);
+  const [queuedPrompts, setQueuedPrompts] = useState<Array<{ id: string; prompt: string; model: string }>>([]);
   
   // New state for preview feature
   const [showPreview, setShowPreview] = useState(false);
@@ -141,7 +112,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const unlistenRefs = useRef<UnlistenFn[]>([]);
   const hasActiveSessionRef = useRef(false);
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
-  const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: "sonnet" | "opus" }>>([]);
+  const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: string }>>([]);
   const isMountedRef = useRef(true);
   const isListeningRef = useRef(false);
   const sessionStartTime = useRef<number>(Date.now());
@@ -487,7 +458,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Project path selection handled by parent tab controls
 
-  const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus") => {
+  const handleSendPrompt = async (prompt: string, model: string) => {
     console.log('[ClaudeCodeSession] handleSendPrompt called with:', { prompt, model, projectPath, claudeSessionId, effectiveSession });
     
     if (!projectPath) {
@@ -1407,7 +1378,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-medium text-muted-foreground">#{index + 1}</span>
                           <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
-                            {queuedPrompt.model === "opus" ? "Opus" : "Sonnet"}
+                            {queuedPrompt.model}
                           </span>
                         </div>
                         <p className="text-sm line-clamp-2 break-words">{queuedPrompt.prompt}</p>

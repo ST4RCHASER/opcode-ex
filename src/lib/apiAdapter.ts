@@ -237,7 +237,8 @@ function mapCommandToEndpoint(command: string, _params?: any): string {
     'get_claude_binary_path': '/api/settings/claude/binary-path',
     'set_claude_binary_path': '/api/settings/claude/binary-path',
     'list_claude_installations': '/api/settings/claude/installations',
-    
+    'list_available_models': '/api/models',
+
     // Storage commands
     'storage_list_tables': '/api/storage/tables',
     'storage_read_table': '/api/storage/tables/{tableName}',
@@ -302,7 +303,7 @@ async function handleStreamingCommand<T>(command: string, params?: any): Promise
         command_type: command.replace('_claude_code', ''), // execute, continue, resume
         project_path: params?.projectPath || '',
         prompt: params?.prompt || '',
-        model: params?.model || 'claude-3-5-sonnet-20241022',
+        model: params?.model || 'sonnet',
         session_id: params?.sessionId,
       };
       

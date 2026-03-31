@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Save, Loader2, ChevronDown, Zap, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Toast, ToastContainer } from "@/components/ui/toast";
-import { api, type Agent } from "@/lib/api";
+import { api, type Agent, type ModelInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import MDEditor from "@uiw/react-md-editor";
 import { type AgentIconName } from "./CCAgents";
@@ -53,6 +53,28 @@ export const CreateAgent: React.FC<CreateAgentProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [showIconPicker, setShowIconPicker] = useState(false);
+  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([
+    { id: "default", name: "Default (recommended)", description: "Opus 4.6 with 1M context" },
+    { id: "sonnet", name: "Sonnet 4.6", description: "Best for everyday tasks" },
+    { id: "opus", name: "Opus 4.6", description: "200K context" },
+    { id: "haiku", name: "Haiku 4.5", description: "Fastest for quick answers" },
+  ]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const models = await api.listAvailableModels();
+        if (models.length > 0) setAvailableModels(models);
+        // If creating a new agent, use the saved default model
+        if (!agent) {
+          const savedDefault = await api.getSetting('default_model');
+          if (savedDefault) setModel(savedDefault);
+        }
+      } catch (e) {
+        // keep fallback models
+      }
+    })();
+  }, []);
 
   const isEditMode = !!agent;
 
@@ -239,53 +261,34 @@ export const CreateAgent: React.FC<CreateAgentProps> = ({
               <div className="space-y-2 mt-4">
                 <Label className="text-caption text-muted-foreground">Model</Label>
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <motion.button
-                    type="button"
-                    onClick={() => setModel("sonnet")}
-                    whileTap={{ scale: 0.97 }}
-                    transition={{ duration: 0.15 }}
-                    className={cn(
-                      "flex-1 px-4 py-3 rounded-md border transition-all",
-                      model === "sonnet" 
-                        ? "border-primary bg-primary/10 text-primary" 
-                        : "border-border hover:border-primary/50 hover:bg-accent"
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Zap className={cn(
-                        "h-4 w-4",
-                        model === "sonnet" ? "text-primary" : "text-muted-foreground"
-                      )} />
-                      <div className="text-left">
-                        <div className="text-body-small font-medium">Claude 4 Sonnet</div>
-                        <div className="text-caption text-muted-foreground">Faster, efficient for most tasks</div>
+                  {availableModels.map((m) => (
+                    <motion.button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setModel(m.id)}
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.15 }}
+                      className={cn(
+                        "flex-1 px-4 py-3 rounded-md border transition-all",
+                        model === m.id
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:border-primary/50 hover:bg-accent"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Zap className={cn(
+                          "h-4 w-4",
+                          model === m.id ? "text-primary" : "text-muted-foreground"
+                        )} />
+                        <div className="text-left">
+                          <div className="text-body-small font-medium">{m.name}</div>
+                          {m.description && (
+                            <div className="text-caption text-muted-foreground">{m.description}</div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </motion.button>
-                  
-                  <motion.button
-                    type="button"
-                    onClick={() => setModel("opus")}
-                    whileTap={{ scale: 0.97 }}
-                    transition={{ duration: 0.15 }}
-                    className={cn(
-                      "flex-1 px-4 py-3 rounded-md border transition-all",
-                      model === "opus" 
-                        ? "border-primary bg-primary/10 text-primary" 
-                        : "border-border hover:border-primary/50 hover:bg-accent"
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Zap className={cn(
-                        "h-4 w-4",
-                        model === "opus" ? "text-primary" : "text-muted-foreground"
-                      )} />
-                      <div className="text-left">
-                        <div className="text-body-small font-medium">Claude 4 Opus</div>
-                        <div className="text-caption text-muted-foreground">More capable, better for complex tasks</div>
-                      </div>
-                    </div>
-                  </motion.button>
+                    </motion.button>
+                  ))}
                 </div>
               </div>
             </Card>

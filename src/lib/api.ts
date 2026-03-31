@@ -111,6 +111,18 @@ export interface ClaudeInstallation {
   installation_type: "System" | "Custom";
 }
 
+/**
+ * Represents an available model
+ */
+export interface ModelInfo {
+  /** Short model identifier (e.g., "sonnet", "opus") */
+  id: string;
+  /** Display name (e.g., "Claude Sonnet 4") */
+  name: string;
+  /** Brief description */
+  description: string;
+}
+
 // Agent API types
 export interface Agent {
   id?: number;
@@ -674,6 +686,27 @@ export const api = {
     } catch (error) {
       console.error("Failed to save CLAUDE.md file:", error);
       throw error;
+    }
+  },
+
+  // Model API methods
+
+  /**
+   * Lists available models, trying CLI discovery first, falling back to defaults
+   * @returns Promise resolving to an array of available models
+   */
+  async listAvailableModels(): Promise<ModelInfo[]> {
+    try {
+      return await apiCall<ModelInfo[]>('list_available_models');
+    } catch (error) {
+      console.error("Failed to list available models:", error);
+      // Return hardcoded fallback if the backend call fails entirely
+      return [
+        { id: "default", name: "Default (recommended)", description: "Opus 4.6 with 1M context" },
+        { id: "sonnet", name: "Sonnet 4.6", description: "Best for everyday tasks" },
+        { id: "opus", name: "Opus 4.6", description: "200K context" },
+        { id: "haiku", name: "Haiku 4.5", description: "Fastest for quick answers" },
+      ];
     }
   },
 

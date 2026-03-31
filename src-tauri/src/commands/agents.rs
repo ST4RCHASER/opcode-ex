@@ -754,18 +754,23 @@ pub async fn execute_agent(
     };
 
     // Build arguments
-    let args = vec![
+    let mut args = vec![
         "-p".to_string(),
         task.clone(),
         "--system-prompt".to_string(),
         agent.system_prompt.clone(),
-        "--model".to_string(),
-        execution_model.clone(),
+    ];
+    // Pass model to --model flag; "default" is a valid Claude CLI value
+    if !execution_model.is_empty() {
+        args.push("--model".to_string());
+        args.push(execution_model.clone());
+    }
+    args.extend([
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
         "--dangerously-skip-permissions".to_string(),
-    ];
+    ]);
 
     // Always use system binary execution (sidecar removed)
     spawn_agent_system(
