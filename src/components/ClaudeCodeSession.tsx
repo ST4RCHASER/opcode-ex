@@ -62,11 +62,15 @@ interface ClaudeCodeSessionProps {
    * Callback when project path changes
    */
   onProjectPathChange?: (path: string) => void;
+  /**
+   * Callback when a new session is created (for tab persistence)
+   */
+  onSessionCreated?: (sessionId: string, projectId: string) => void;
 }
 
 /**
  * ClaudeCodeSession component for interactive Claude Code sessions
- * 
+ *
  * @example
  * <ClaudeCodeSession onBack={() => setView('projects')} />
  */
@@ -76,6 +80,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   className,
   onStreamingChange,
   onProjectPathChange,
+  onSessionCreated,
 }) => {
   const [projectPath] = useState(initialProjectPath || session?.project_path || "");
   const [messages, setMessages] = useState<ClaudeStreamMessage[]>([]);
@@ -171,6 +176,23 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Filter out messages that shouldn't be displayed
   const displayableMessages = useMemo(() => {
     return messages.filter((message, index) => {
+      // Skip verbose/meta message types
+      if (message.type === 'result') return false;
+      if (message.type === 'stream_event') return false;
+      if (message.type === 'rate_limit_event') return false;
+      if (message.type === 'system') {
+        const sub = message.subtype;
+        if (sub === 'init' || sub === 'hook_started' || sub === 'hook_response' || sub === 'session_state_changed') {
+          return false;
+        }
+      }
+      // Skip empty assistant messages (from streaming placeholders)
+      if (message.type === 'assistant' && message.message?.content) {
+        const hasText = message.message.content.some((c: any) => c.type === 'text' && c.text?.length > 0);
+        const hasToolUse = message.message.content.some((c: any) => c.type === 'tool_use');
+        if (!hasText && !hasToolUse) return false;
+      }
+
       // Skip meta messages that don't have meaningful content
       if (message.isMeta && !message.leafUuid && !message.summary) {
         return false;
@@ -359,7 +381,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       }, 100);
     } catch (err) {
       console.error("Failed to load session history:", err);
-      setError("Failed to load session history");
+      // Only show error if no messages are loaded yet (avoid flashing error on secondary attempts)
+      if (messages.length === 0) {
+        setError("Failed to load session history");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -561,6 +586,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     projectPath,
                     messages.length
                   );
+
+                  // Notify parent tab so sessionId is persisted
+                  onSessionCreated?.(msg.session_id, projectId);
                 }
 
                 // Switch to session-specific listeners

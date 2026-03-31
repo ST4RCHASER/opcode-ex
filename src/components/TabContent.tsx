@@ -5,6 +5,7 @@ import { useScreenTracking } from '@/hooks/useAnalytics';
 import { Tab } from '@/contexts/TabContext';
 import { Loader2, Plus, ArrowLeft } from 'lucide-react';
 import { api, type Project, type Session, type ClaudeMdFile } from '@/lib/api';
+import { SessionPersistenceService } from '@/services/sessionPersistence';
 import { ProjectList } from '@/components/ProjectList';
 import { SessionList } from '@/components/SessionList';
 import { Button } from '@/components/ui/button';
@@ -249,7 +250,12 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         return (
           <div className="h-full">
             <ClaudeCodeSession
-              session={tab.sessionData} // Pass the full session object if available
+              session={tab.sessionData || (tab.sessionId ? (() => {
+                // Restore session from persistence when sessionData is missing (e.g., after app restart)
+                const restored = SessionPersistenceService.loadSession(tab.sessionId!);
+                if (restored) return SessionPersistenceService.createSessionFromRestoreData(restored);
+                return undefined;
+              })() : undefined)}
               initialProjectPath={tab.initialProjectPath || tab.sessionId}
               onBack={() => {
                 // Go back to projects view in the same tab
@@ -264,6 +270,10 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                 updateTab(tab.id, {
                   title: dirName
                 });
+              }}
+              onSessionCreated={(sessionId: string) => {
+                // Update tab's sessionId so it persists across app restarts
+                updateTab(tab.id, { sessionId });
               }}
             />
           </div>
