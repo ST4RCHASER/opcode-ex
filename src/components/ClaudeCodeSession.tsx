@@ -90,6 +90,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
   const [isFirstPrompt, setIsFirstPrompt] = useState(!session);
   const [totalTokens, setTotalTokens] = useState(0);
+  const [contextUsage, setContextUsage] = useState<{ used: number; total: number; model?: string }>({ used: 0, total: 0 });
   const [extractedSessionInfo, setExtractedSessionInfo] = useState<{ sessionId: string; projectId: string } | null>(null);
   const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
@@ -359,7 +360,31 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       
       setMessages(loadedMessages);
       setRawJsonlOutput(history.map(h => JSON.stringify(h)));
-      
+
+      // Extract context usage from history
+      for (const entry of history) {
+        // Get context window from init message model name
+        if (entry.type === 'system' && entry.subtype === 'init' && entry.model) {
+          const ctxMatch = entry.model.match(/\[(\d+)([mk])\]/i);
+          let ctxWindow = 200000;
+          if (ctxMatch) {
+            ctxWindow = parseInt(ctxMatch[1]) * (ctxMatch[2].toLowerCase() === 'm' ? 1000000 : 1000);
+          }
+          setContextUsage(prev => ({ ...prev, total: ctxWindow, model: entry.model }));
+        }
+        // Get token usage from result message
+        if (entry.type === 'result' && entry.modelUsage) {
+          const firstModel = Object.values(entry.modelUsage)[0] as any;
+          if (firstModel?.contextWindow) {
+            const used = (entry.usage?.input_tokens || 0)
+              + (entry.usage?.cache_creation_input_tokens || 0)
+              + (entry.usage?.cache_read_input_tokens || 0)
+              + (entry.usage?.output_tokens || 0);
+            setContextUsage({ used, total: firstModel.contextWindow, model: Object.keys(entry.modelUsage)[0] });
+          }
+        }
+      }
+
       // After loading history, we're continuing a conversation
       setIsFirstPrompt(false);
       
@@ -691,6 +716,18 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               sessionMetrics.current.errorsEncountered += 1;
             }
 
+            // Extract model context window from init message
+            if (message.type === 'system' && message.subtype === 'init') {
+              const modelName = (message as any).model || '';
+              // Detect context window from model name suffix (e.g., claude-opus-4-6[1m])
+              const ctxMatch = modelName.match(/\[(\d+)([mk])\]/i);
+              let ctxWindow = 200000; // default
+              if (ctxMatch) {
+                ctxWindow = parseInt(ctxMatch[1]) * (ctxMatch[2].toLowerCase() === 'm' ? 1000000 : 1000);
+              }
+              setContextUsage(prev => ({ ...prev, total: ctxWindow, model: modelName }));
+            }
+
             // Skip verbose system messages — --verbose is required for
             // stream-json but users don't need to see these in the chat
             if (message.type === 'system') {
@@ -700,9 +737,25 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               }
             }
 
-            // Skip rate_limit_event and result — not useful to display in chat
+            // Skip rate_limit_event — not useful to display
             if (message.type === 'rate_limit_event') return;
-            if (message.type === 'result') return;
+
+            // Extract context usage from result before skipping display
+            if (message.type === 'result') {
+              const modelUsage = (message as any).modelUsage;
+              const usage = (message as any).usage;
+              if (modelUsage) {
+                const firstModel = Object.values(modelUsage)[0] as any;
+                if (firstModel?.contextWindow) {
+                  const used = (usage?.input_tokens || 0)
+                    + (usage?.cache_creation_input_tokens || 0)
+                    + (usage?.cache_read_input_tokens || 0)
+                    + (usage?.output_tokens || 0);
+                  setContextUsage({ used, total: firstModel.contextWindow });
+                }
+              }
+              return; // Don't display result in chat
+            }
 
             // Handle streaming delta events for incremental text display
             if (message.type === 'stream_event' && (message as any).event) {
@@ -1610,6 +1663,69 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       </motion.div>
                     </TooltipSimple>
                   )}
+                  {(() => {
+                    const total = contextUsage.total || 200000;
+                    const pct = total > 0 ? Math.min(contextUsage.used / total, 1) : 0;
+                    const pctInt = Math.round(pct * 100);
+                    const color = pct < 0.5 ? "text-green-500" : pct < 0.75 ? "text-yellow-500" : "text-red-500";
+                    const barColor = pct < 0.5 ? "bg-green-500" : pct < 0.75 ? "bg-yellow-500" : "bg-red-500";
+                    const usedStr = contextUsage.used >= 1000 ? `${(contextUsage.used / 1000).toFixed(1)}K` : `${contextUsage.used}`;
+                    const totalStr = total >= 1000000 ? `${(total / 1000000).toFixed(0)}M` : `${Math.round(total / 1000)}K`;
+                    return (
+                      <Popover
+                        trigger={
+                          <div className="relative h-7 w-7 flex items-center justify-center cursor-pointer">
+                            <svg className="h-7 w-7 -rotate-90" viewBox="0 0 28 28">
+                              <circle cx="14" cy="14" r="11" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-muted/30" />
+                              <circle cx="14" cy="14" r="11" fill="none" stroke="currentColor" strokeWidth="2.5"
+                                strokeDasharray={`${2 * Math.PI * 11}`}
+                                strokeDashoffset={`${2 * Math.PI * 11 * (1 - pct)}`}
+                                strokeLinecap="round"
+                                className={cn("transition-all duration-500", color)}
+                              />
+                            </svg>
+                            <span className="absolute text-[8px] font-medium text-muted-foreground">{pctInt}</span>
+                          </div>
+                        }
+                        content={
+                          <div className="w-64 p-3 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">Context Window</span>
+                              <span className={cn("text-sm font-bold", color)}>{pctInt}%</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="relative h-12 w-12 flex-shrink-0">
+                                <svg className="h-12 w-12 -rotate-90" viewBox="0 0 48 48">
+                                  <circle cx="24" cy="24" r="19" fill="none" stroke="currentColor" strokeWidth="4" className="text-muted/20" />
+                                  <circle cx="24" cy="24" r="19" fill="none" stroke="currentColor" strokeWidth="4"
+                                    strokeDasharray={`${2 * Math.PI * 19}`}
+                                    strokeDashoffset={`${2 * Math.PI * 19 * (1 - pct)}`}
+                                    strokeLinecap="round"
+                                    className={cn("transition-all duration-500", color)}
+                                  />
+                                </svg>
+                              </div>
+                              <div className="flex-1 space-y-1.5">
+                                <div className="h-2 rounded-full bg-muted/20 overflow-hidden">
+                                  <div className={cn("h-full rounded-full transition-all duration-500", barColor)} style={{ width: `${pctInt}%` }} />
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {usedStr} / {totalStr} tokens
+                                </div>
+                              </div>
+                            </div>
+                            {contextUsage.model && (
+                              <div className="text-[11px] text-muted-foreground pt-1 border-t border-border/50">
+                                Model: {contextUsage.model}
+                              </div>
+                            )}
+                          </div>
+                        }
+                        side="top"
+                        align="end"
+                      />
+                    );
+                  })()}
                   {messages.length > 0 && (
                     <Popover
                       trigger={
