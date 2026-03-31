@@ -904,6 +904,39 @@ pub async fn read_claude_md_file(file_path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))
 }
 
+/// Saves base64 image data to a temp file and returns the file path
+#[tauri::command]
+pub async fn save_temp_image(base64_data: String) -> Result<String, String> {
+    use base64::Engine;
+
+    // Strip the data URL prefix (e.g., "data:image/png;base64,")
+    let (ext, raw_b64) = if let Some(rest) = base64_data.strip_prefix("data:image/") {
+        if let Some(idx) = rest.find(";base64,") {
+            let ext = &rest[..idx];
+            let b64 = &rest[idx + 8..];
+            (ext.to_string(), b64.to_string())
+        } else {
+            ("png".to_string(), base64_data.clone())
+        }
+    } else {
+        ("png".to_string(), base64_data.clone())
+    };
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&raw_b64)
+        .map_err(|e| format!("Failed to decode base64: {}", e))?;
+
+    let temp_dir = std::env::temp_dir().join("opcode-images");
+    fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {}", e))?;
+
+    let filename = format!("paste-{}.{}", uuid::Uuid::new_v4(), ext);
+    let file_path = temp_dir.join(&filename);
+
+    fs::write(&file_path, bytes).map_err(|e| format!("Failed to write temp image: {}", e))?;
+
+    Ok(file_path.to_string_lossy().to_string())
+}
+
 /// Saves a specific CLAUDE.md file by its absolute path
 #[tauri::command]
 pub async fn save_claude_md_file(file_path: String, content: String) -> Result<String, String> {

@@ -710,6 +710,13 @@ export const api = {
     }
   },
 
+  /**
+   * Saves base64 image data to a temp file and returns the file path
+   */
+  async saveTempImage(base64Data: string): Promise<string> {
+    return apiCall<string>('save_temp_image', { base64Data });
+  },
+
   // Agent API methods
   
   /**

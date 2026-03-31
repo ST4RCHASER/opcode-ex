@@ -23,7 +23,7 @@ use commands::claude::{
     execute_claude_code, find_claude_md_files, fork_from_checkpoint, get_checkpoint_diff,
     get_checkpoint_settings, get_checkpoint_state_stats, get_claude_session_output,
     get_claude_settings, get_home_directory, get_hooks_config, get_project_sessions,
-    get_recently_modified_files, get_session_timeline, get_system_prompt, list_available_models,
+    get_recently_modified_files, get_session_timeline, get_system_prompt, list_available_models, save_temp_image,
     list_checkpoints, list_directory_contents, list_projects, list_running_claude_sessions,
     load_session_history, open_new_session, read_claude_md_file, restore_checkpoint,
     resume_claude_code, save_claude_md_file, save_claude_settings, save_system_prompt,
@@ -212,6 +212,7 @@ fn main() {
             update_hooks_config,
             validate_hook_command,
             list_available_models,
+            save_temp_image,
             // Checkpoint Management
             create_checkpoint,
             restore_checkpoint,

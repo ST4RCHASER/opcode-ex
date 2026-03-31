@@ -232,7 +232,9 @@ const FloatingPromptInputInner = (
   const [slashCommandQuery, setSlashCommandQuery] = useState("");
   const [cursorPosition, setCursorPosition] = useState(0);
   const [embeddedImages, setEmbeddedImages] = useState<string[]>([]);
+  const [pastedImageMap, setPastedImageMap] = useState<Map<string, { base64: string; filePath: string }>>(new Map());
   const [dragActive, setDragActive] = useState(false);
+  const pastedImageCounter = useRef(0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const expandedTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -361,12 +363,26 @@ const FloatingPromptInputInner = (
     return uniquePaths;
   };
 
-  // Update embedded images when prompt changes
+  // Update embedded images when prompt changes, and sync placeholder removals
   useEffect(() => {
-    console.log('[useEffect] Prompt changed:', prompt);
-    const imagePaths = extractImagePaths(prompt);
-    console.log('[useEffect] Setting embeddedImages to:', imagePaths);
-    setEmbeddedImages(imagePaths);
+    // Remove pasted images whose placeholder was deleted from the prompt
+    let mapChanged = false;
+    const newMap = new Map(pastedImageMap);
+    newMap.forEach((_, placeholder) => {
+      if (!prompt.includes(placeholder)) {
+        newMap.delete(placeholder);
+        mapChanged = true;
+      }
+    });
+    if (mapChanged) {
+      setPastedImageMap(newMap);
+    }
+
+    // Extract file-path based images from the prompt text
+    const fileImages = extractImagePaths(prompt).filter(p => !p.startsWith('data:'));
+    // Merge with pasted images still present
+    const pastedImages = Array.from(newMap.values()).map(v => v.base64);
+    setEmbeddedImages([...pastedImages, ...fileImages]);
     
     // Auto-resize on prompt change (handles paste, programmatic changes, etc.)
     if (textareaRef.current && !isExpanded) {
@@ -376,7 +392,7 @@ const FloatingPromptInputInner = (
       setTextareaHeight(newHeight);
       textareaRef.current.style.height = `${newHeight}px`;
     }
-  }, [prompt, projectPath, isExpanded]);
+  }, [prompt, projectPath, isExpanded, pastedImageMap]);
 
   // Set up Tauri drag-drop event listener
   useEffect(() => {
@@ -720,6 +736,11 @@ const FloatingPromptInputInner = (
     if (prompt.trim() && !disabled) {
       let finalPrompt = prompt.trim();
 
+      // Replace image placeholders with file path @mentions
+      pastedImageMap.forEach(({ filePath }, placeholder) => {
+        finalPrompt = finalPrompt.replace(placeholder, `@${filePath}`);
+      });
+
       // Append thinking phrase if not auto mode
       const thinkingMode = THINKING_MODES.find(m => m.id === selectedThinkingMode);
       if (thinkingMode && thinkingMode.phrase) {
@@ -729,11 +750,37 @@ const FloatingPromptInputInner = (
       onSend(finalPrompt, selectedModel);
       setPrompt("");
       setEmbeddedImages([]);
+      setPastedImageMap(new Map());
+      pastedImageCounter.current = 0;
       setTextareaHeight(48); // Reset height after sending
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Delete entire [Image N] placeholder on backspace
+    if (e.key === 'Backspace') {
+      const target = e.target as HTMLTextAreaElement;
+      const pos = target.selectionStart;
+      const text = prompt;
+      // Check if cursor is right after or inside an [Image N] placeholder
+      const beforeCursor = text.slice(0, pos);
+      const match = beforeCursor.match(/\[Image \d+\]$/);
+      if (match) {
+        e.preventDefault();
+        const start = pos - match[0].length;
+        // Also remove trailing space if present
+        const end = text[pos] === ' ' ? pos + 1 : pos;
+        // Also remove leading space if present
+        const realStart = start > 0 && text[start - 1] === ' ' ? start - 1 : start;
+        const newPrompt = text.slice(0, realStart) + text.slice(end);
+        setPrompt(newPrompt);
+        setTimeout(() => {
+          target.setSelectionRange(realStart, realStart);
+        }, 0);
+        return;
+      }
+    }
+
     if (showFilePicker && e.key === 'Escape') {
       e.preventDefault();
       setShowFilePicker(false);
@@ -777,35 +824,36 @@ const FloatingPromptInputInner = (
     for (const item of items) {
       if (item.type.startsWith('image/')) {
         e.preventDefault();
-        
-        // Get the image blob
+
         const blob = item.getAsFile();
         if (!blob) continue;
 
         try {
-          // Convert blob to base64
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64Data = reader.result as string;
-            
-            // Add the base64 data URL directly to the prompt
-            setPrompt(currentPrompt => {
-              // Use the data URL directly as the image reference
-              const mention = `@"${base64Data}"`;
-              const newPrompt = currentPrompt + (currentPrompt.endsWith(' ') || currentPrompt === '' ? '' : ' ') + mention + ' ';
-              
-              // Focus the textarea and move cursor to end
-              setTimeout(() => {
-                const target = isExpanded ? expandedTextareaRef.current : textareaRef.current;
-                target?.focus();
-                target?.setSelectionRange(newPrompt.length, newPrompt.length);
-              }, 0);
+          const base64Data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
 
-              return newPrompt;
-            });
-          };
-          
-          reader.readAsDataURL(blob);
+          // Save to temp file and get path
+          const filePath = await api.saveTempImage(base64Data);
+
+          pastedImageCounter.current += 1;
+          const placeholder = `[Image ${pastedImageCounter.current}]`;
+
+          setPastedImageMap(prev => new Map(prev).set(placeholder, { base64: base64Data, filePath }));
+          setEmbeddedImages(prev => [...prev, base64Data]);
+
+          setPrompt(currentPrompt => {
+            const newPrompt = currentPrompt + (currentPrompt.endsWith(' ') || currentPrompt === '' ? '' : ' ') + placeholder + ' ';
+            setTimeout(() => {
+              const target = isExpanded ? expandedTextareaRef.current : textareaRef.current;
+              target?.focus();
+              target?.setSelectionRange(newPrompt.length, newPrompt.length);
+            }, 0);
+            return newPrompt;
+          });
         } catch (error) {
           console.error('Failed to paste image:', error);
         }
@@ -830,13 +878,28 @@ const FloatingPromptInputInner = (
   const handleRemoveImage = (index: number) => {
     // Remove the corresponding @mention from the prompt
     const imagePath = embeddedImages[index];
-    
-    // For data URLs, we need to handle them specially since they're always quoted
+
+    // For pasted images (data URLs), find and remove the placeholder
     if (imagePath.startsWith('data:')) {
-      // Simply remove the exact quoted data URL
-      const quotedPath = `@"${imagePath}"`;
-      const newPrompt = prompt.replace(quotedPath, '').trim();
-      setPrompt(newPrompt);
+      // Find which placeholder maps to this base64 data
+      let placeholderToRemove: string | null = null;
+      pastedImageMap.forEach(({ base64 }, placeholder) => {
+        if (base64 === imagePath) placeholderToRemove = placeholder;
+      });
+
+      if (placeholderToRemove) {
+        setPrompt(prev => prev.replace(placeholderToRemove!, '').replace(/\s{2,}/g, ' ').trim());
+        setPastedImageMap(prev => {
+          const next = new Map(prev);
+          next.delete(placeholderToRemove!);
+          return next;
+        });
+      } else {
+        // Fallback: try removing the quoted data URL directly (from addImage API)
+        const quotedPath = `@"${imagePath}"`;
+        setPrompt(prev => prev.replace(quotedPath, '').trim());
+      }
+      setEmbeddedImages(prev => prev.filter((_, i) => i !== index));
       return;
     }
     

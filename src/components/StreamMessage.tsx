@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Terminal, 
-  User, 
-  Bot, 
-  AlertCircle, 
-  CheckCircle2
+  Terminal,
+  User,
+  Bot,
+  AlertCircle,
+  CheckCircle2,
+  Maximize2
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -358,10 +359,71 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                       return <CommandOutputWidget output={output} onLinkDetected={onLinkDetected} />;
                     }
                     
-                    // Otherwise render as plain text
+                    // Extract image paths and replace with [Image N] placeholders in text
+                    const imagePathRegex = /@"?([^"\s]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg))"?/gi;
+                    const imagePaths: string[] = [];
+                    let displayText = contentStr;
+                    let imgMatch;
+                    imagePathRegex.lastIndex = 0;
+                    while ((imgMatch = imagePathRegex.exec(contentStr)) !== null) {
+                      imagePaths.push(imgMatch[1]);
+                    }
+                    // Replace raw paths with [Image N] labels
+                    imagePaths.forEach((p, i) => {
+                      displayText = displayText.replace(new RegExp(`@"?${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"?`), `[Image ${i + 1}]`);
+                    });
+
                     return (
-                      <div className="text-sm">
-                        {contentStr}
+                      <div className="text-sm space-y-2">
+                        <div>{displayText}</div>
+                        {imagePaths.length > 0 && (
+                          <div className="pt-2 mt-2 border-t border-border/50">
+                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                              Attachments ({imagePaths.length})
+                            </span>
+                            <div className="flex flex-wrap gap-2 mt-1.5">
+                              {imagePaths.map((imgPath, i) => (
+                                <div
+                                  key={i}
+                                  className="relative group cursor-pointer"
+                                  onClick={() => {
+                                    // Open full-size image in a dialog/overlay
+                                    const overlay = document.createElement('div');
+                                    overlay.className = 'fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center cursor-pointer';
+                                    overlay.onclick = () => overlay.remove();
+                                    const img = document.createElement('img');
+                                    img.src = `asset://localhost/${imgPath}`;
+                                    img.onerror = () => { img.src = `file://${imgPath}`; };
+                                    img.className = 'max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl object-contain';
+                                    overlay.appendChild(img);
+                                    document.body.appendChild(overlay);
+                                  }}
+                                >
+                                  <span className="absolute top-1 left-1 z-10 text-[10px] bg-black/60 text-white px-1 rounded">
+                                    {i + 1}
+                                  </span>
+                                  <img
+                                    src={`asset://localhost/${imgPath}`}
+                                    alt={`Image ${i + 1}`}
+                                    className="h-20 w-20 rounded border border-border object-cover transition-transform group-hover:scale-105 group-hover:shadow-lg"
+                                    onError={(e) => {
+                                      const target = e.target as HTMLImageElement;
+                                      if (!target.dataset.retried) {
+                                        target.dataset.retried = 'true';
+                                        target.src = `file://${imgPath}`;
+                                      } else {
+                                        target.style.display = 'none';
+                                      }
+                                    }}
+                                  />
+                                  <div className="absolute inset-0 rounded bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                    <Maximize2 className="h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })()
