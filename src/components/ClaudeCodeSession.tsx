@@ -663,6 +663,71 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               sessionMetrics.current.errorsEncountered += 1;
             }
 
+            // Skip verbose system messages — --verbose is required for
+            // stream-json but users don't need to see these in the chat
+            if (message.type === 'system') {
+              const sub = message.subtype;
+              if (sub === 'init' || sub === 'hook_started' || sub === 'hook_response' || sub === 'session_state_changed') {
+                return;
+              }
+            }
+
+            // Skip rate_limit_event and result — not useful to display in chat
+            if (message.type === 'rate_limit_event') return;
+            if (message.type === 'result') return;
+
+            // Handle streaming delta events for incremental text display
+            if (message.type === 'stream_event' && (message as any).event) {
+              const evt = (message as any).event;
+              if (evt.type === 'content_block_delta' && evt.delta?.type === 'text_delta' && evt.delta?.text) {
+                // Append delta text to the last assistant message
+                setMessages((prev) => {
+                  const last = prev[prev.length - 1];
+                  if (last?.type === 'assistant' && last.message?.content) {
+                    const updated = { ...last, message: { ...last.message, content: [...last.message.content] } };
+                    const lastContent = updated.message.content[updated.message.content.length - 1];
+                    if (lastContent?.type === 'text') {
+                      updated.message.content[updated.message.content.length - 1] = {
+                        ...lastContent,
+                        text: lastContent.text + evt.delta.text,
+                      };
+                    }
+                    return [...prev.slice(0, -1), updated];
+                  }
+                  return prev;
+                });
+                return;
+              }
+              if (evt.type === 'content_block_start' && evt.content_block?.type === 'text') {
+                // Create the initial assistant message with empty text
+                setMessages((prev) => {
+                  const last = prev[prev.length - 1];
+                  if (last?.type === 'assistant' && last.message?.content) {
+                    const updated = { ...last, message: { ...last.message, content: [...last.message.content, { type: 'text', text: '' }] } };
+                    return [...prev.slice(0, -1), updated];
+                  }
+                  return [...prev, { type: 'assistant', message: { content: [{ type: 'text', text: '' }] } } as any];
+                });
+                return;
+              }
+              // Skip other stream_events
+              return;
+            }
+
+            // When a complete assistant message arrives after streaming deltas,
+            // replace the delta-built message instead of duplicating
+            if (message.type === 'assistant') {
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                if (last?.type === 'assistant') {
+                  // Replace the streamed placeholder with the final complete message
+                  return [...prev.slice(0, -1), message];
+                }
+                return [...prev, message];
+              });
+              return;
+            }
+
             setMessages((prev) => [...prev, message]);
           } catch (err) {
             console.error('Failed to parse message:', err, payload);

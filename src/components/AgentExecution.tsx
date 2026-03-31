@@ -59,7 +59,7 @@ interface AgentExecutionProps {
 }
 
 export interface ClaudeStreamMessage {
-  type: "system" | "assistant" | "user" | "result";
+  type: "system" | "assistant" | "user" | "result" | "stream_event" | "rate_limit_event";
   subtype?: string;
   message?: {
     content?: any[];

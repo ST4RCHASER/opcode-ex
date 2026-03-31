@@ -990,6 +990,7 @@ pub async fn execute_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
+        "--include-partial-messages".to_string(),
         "--dangerously-skip-permissions".to_string(),
     ]);
 
@@ -1026,6 +1027,7 @@ pub async fn continue_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
+        "--include-partial-messages".to_string(),
         "--dangerously-skip-permissions".to_string(),
     ]);
 
@@ -1065,6 +1067,7 @@ pub async fn resume_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
+        "--include-partial-messages".to_string(),
         "--dangerously-skip-permissions".to_string(),
     ]);
 
