@@ -119,7 +119,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Add collapsed state for queued prompts
   const [queuedPromptsCollapsed, setQueuedPromptsCollapsed] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
-  const [terminalHeight, setTerminalHeight] = useState(300);
+  const [terminalHeight, setTerminalHeight] = useState(400);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
@@ -1686,22 +1686,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </motion.div>
           )}
 
-          {/* Terminal Panel */}
-          {showTerminal && (
-            <div className={cn(
-              "fixed bottom-0 left-0 right-0 z-40 transition-all duration-300",
-              showTimeline && "sm:right-96"
-            )}>
-              <TerminalPanel
-                projectPath={projectPath}
-                isOpen={showTerminal}
-                onClose={() => setShowTerminal(false)}
-                height={terminalHeight}
-                onHeightChange={setTerminalHeight}
-              />
-            </div>
-          )}
-
           <div className={cn(
             "fixed left-0 right-0 transition-all duration-300 z-50",
             showTimeline && "sm:right-96"
@@ -1873,6 +1857,22 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               }
             />
           </div>
+
+          {/* Terminal Panel — anchored to bottom, prompt sits above it */}
+          {showTerminal && (
+            <div className={cn(
+              "fixed bottom-0 left-0 right-0 z-40 transition-all duration-300",
+              showTimeline && "sm:right-96"
+            )}>
+              <TerminalPanel
+                projectPath={projectPath}
+                isOpen={showTerminal}
+                onClose={() => setShowTerminal(false)}
+                height={terminalHeight}
+                onHeightChange={setTerminalHeight}
+              />
+            </div>
+          )}
 
           {/* Token Counter - positioned under the Send button */}
           {totalTokens > 0 && (

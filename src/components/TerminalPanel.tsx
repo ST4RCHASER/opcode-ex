@@ -199,8 +199,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
 
   if (!isOpen) return null;
 
-  // Calculate terminal area height (total - drag handle - header)
-  const headerHeight = 36; // drag handle (6px) + header (~30px with padding)
+  // Calculate terminal area height (total - drag handle - header - prompt bar)
+  const headerHeight = 36; // drag handle (6px) + header (~30px)
+  const promptBarHeight = 80; // floating prompt input below the terminal
 
   return (
     <div
@@ -241,7 +242,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
       {/* Terminal container — explicit height so xterm can calculate rows/cols */}
       <div
         ref={termRef}
-        style={{ height: `${height - headerHeight}px`, padding: '2px 4px' }}
+        style={{ height: `${height - headerHeight - promptBarHeight}px`, padding: '2px 4px' }}
       />
     </div>
   );
