@@ -37,6 +37,7 @@ use commands::mcp::{
 };
 
 use commands::proxy::{apply_proxy_settings, get_proxy_settings, save_proxy_settings};
+use commands::terminal::{terminal_kill, terminal_resize, terminal_spawn, terminal_write, TerminalState};
 use commands::storage::{
     storage_delete_row, storage_execute_sql, storage_insert_row, storage_list_tables,
     storage_read_table, storage_reset_database, storage_update_row,
@@ -143,6 +144,9 @@ fn main() {
 
             // Initialize process registry
             app.manage(ProcessRegistryState::default());
+
+            // Initialize terminal state
+            app.manage(TerminalState::default());
 
             // Initialize Claude process state
             app.manage(ClaudeProcessState::default());
@@ -291,6 +295,11 @@ fn main() {
             // Proxy Settings
             get_proxy_settings,
             save_proxy_settings,
+            // Terminal
+            terminal_spawn,
+            terminal_write,
+            terminal_resize,
+            terminal_kill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

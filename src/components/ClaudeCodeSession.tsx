@@ -7,7 +7,8 @@ import {
   ChevronUp,
   X,
   Hash,
-  Wrench
+  Wrench,
+  Terminal
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ import { FloatingPromptInput, type FloatingPromptInputRef } from "./FloatingProm
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TimelineNavigator } from "./TimelineNavigator";
 import { CheckpointSettings } from "./CheckpointSettings";
+import { TerminalPanel } from "./TerminalPanel";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
@@ -116,6 +118,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   
   // Add collapsed state for queued prompts
   const [queuedPromptsCollapsed, setQueuedPromptsCollapsed] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
+  const [terminalHeight, setTerminalHeight] = useState(300);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
@@ -1682,10 +1686,26 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </motion.div>
           )}
 
+          {/* Terminal Panel */}
+          {showTerminal && (
+            <div className={cn(
+              "fixed bottom-0 left-0 right-0 z-40 transition-all duration-300",
+              showTimeline && "sm:right-96"
+            )}>
+              <TerminalPanel
+                projectPath={projectPath}
+                isOpen={showTerminal}
+                onClose={() => setShowTerminal(false)}
+                height={terminalHeight}
+                onHeightChange={setTerminalHeight}
+              />
+            </div>
+          )}
+
           <div className={cn(
-            "fixed bottom-0 left-0 right-0 transition-all duration-300 z-50",
+            "fixed left-0 right-0 transition-all duration-300 z-50",
             showTimeline && "sm:right-96"
-          )}>
+          )} style={{ bottom: showTerminal ? `${terminalHeight}px` : '0' }}>
             <FloatingPromptInput
               ref={floatingPromptRef}
               onSend={handleSendPrompt}
@@ -1834,6 +1854,18 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                         className="h-8 w-8 text-muted-foreground hover:text-foreground"
                       >
                         <Wrench className={cn("h-3.5 w-3.5", showSettings && "text-primary")} />
+                      </Button>
+                    </motion.div>
+                  </TooltipSimple>
+                  <TooltipSimple content="Terminal" side="top">
+                    <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowTerminal(!showTerminal)}
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      >
+                        <Terminal className={cn("h-3.5 w-3.5", showTerminal && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>
