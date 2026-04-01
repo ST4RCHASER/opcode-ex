@@ -362,6 +362,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       setRawJsonlOutput(history.map(h => JSON.stringify(h)));
 
       // Extract context usage from history
+      let totalUsed = 0;
       for (const entry of history) {
         // Get context window from init message model name
         if (entry.type === 'system' && entry.subtype === 'init' && entry.model) {
@@ -372,17 +373,23 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           }
           setContextUsage(prev => ({ ...prev, total: ctxWindow, model: entry.model }));
         }
-        // Get token usage from result message
-        if (entry.type === 'result' && entry.modelUsage) {
-          const firstModel = Object.values(entry.modelUsage)[0] as any;
-          if (firstModel?.contextWindow) {
-            const used = (entry.usage?.input_tokens || 0)
-              + (entry.usage?.cache_creation_input_tokens || 0)
-              + (entry.usage?.cache_read_input_tokens || 0)
-              + (entry.usage?.output_tokens || 0);
-            setContextUsage({ used, total: firstModel.contextWindow, model: Object.keys(entry.modelUsage)[0] });
-          }
+        // Accumulate token usage from assistant messages and result
+        if (entry.type === 'assistant' && entry.message?.usage) {
+          const u = entry.message.usage;
+          totalUsed = (u.input_tokens || 0)
+            + (u.cache_creation_input_tokens || 0)
+            + (u.cache_read_input_tokens || 0)
+            + (u.output_tokens || 0);
         }
+        if (entry.type === 'result' && entry.usage) {
+          totalUsed = (entry.usage.input_tokens || 0)
+            + (entry.usage.cache_creation_input_tokens || 0)
+            + (entry.usage.cache_read_input_tokens || 0)
+            + (entry.usage.output_tokens || 0);
+        }
+      }
+      if (totalUsed > 0) {
+        setContextUsage(prev => ({ ...prev, used: totalUsed }));
       }
 
       // After loading history, we're continuing a conversation
@@ -744,15 +751,21 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             if (message.type === 'result') {
               const modelUsage = (message as any).modelUsage;
               const usage = (message as any).usage;
-              if (modelUsage) {
-                const firstModel = Object.values(modelUsage)[0] as any;
-                if (firstModel?.contextWindow) {
-                  const used = (usage?.input_tokens || 0)
-                    + (usage?.cache_creation_input_tokens || 0)
-                    + (usage?.cache_read_input_tokens || 0)
-                    + (usage?.output_tokens || 0);
-                  setContextUsage({ used, total: firstModel.contextWindow });
-                }
+              if (usage) {
+                const used = (usage.input_tokens || 0)
+                  + (usage.cache_creation_input_tokens || 0)
+                  + (usage.cache_read_input_tokens || 0)
+                  + (usage.output_tokens || 0);
+                setContextUsage(prev => {
+                  // Only use result's contextWindow if init didn't set a larger one (e.g., 1M)
+                  const resultCtx = modelUsage
+                    ? (Object.values(modelUsage)[0] as any)?.contextWindow
+                    : undefined;
+                  const total = (prev.total > 0 && (!resultCtx || prev.total >= resultCtx))
+                    ? prev.total
+                    : (resultCtx || prev.total || 200000);
+                  return { ...prev, used, total };
+                });
               }
               return; // Don't display result in chat
             }
@@ -1644,6 +1657,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               isLoading={isLoading}
               disabled={!projectPath}
               projectPath={projectPath}
+              onModelChange={(model) => {
+                setContextUsage(prev => ({ ...prev, total: model.context_window, model: model.id }));
+              }}
               extraMenuItems={
                 <>
                   {effectiveSession && (

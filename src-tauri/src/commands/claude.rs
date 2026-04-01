@@ -738,6 +738,8 @@ pub struct ModelInfo {
     pub name: String,
     /// Brief description
     pub description: String,
+    /// Context window size in tokens
+    pub context_window: u64,
 }
 
 /// Default/fallback model list when CLI discovery fails
@@ -747,21 +749,25 @@ pub fn default_model_list() -> Vec<ModelInfo> {
             id: "default".to_string(),
             name: "Default (recommended)".to_string(),
             description: "Opus 4.6 with 1M context".to_string(),
+            context_window: 1_000_000,
         },
         ModelInfo {
             id: "sonnet".to_string(),
             name: "Sonnet 4.6".to_string(),
             description: "Best for everyday tasks".to_string(),
+            context_window: 200_000,
         },
         ModelInfo {
             id: "opus".to_string(),
             name: "Opus 4.6".to_string(),
             description: "200K context".to_string(),
+            context_window: 200_000,
         },
         ModelInfo {
             id: "haiku".to_string(),
             name: "Haiku 4.5".to_string(),
             description: "Fastest for quick answers".to_string(),
+            context_window: 200_000,
         },
     ]
 }

@@ -67,6 +67,10 @@ interface FloatingPromptInputProps {
    */
   onCancel?: () => void;
   /**
+   * Callback when model selection changes
+   */
+  onModelChange?: (model: ModelInfo) => void;
+  /**
    * Extra menu items to display in the prompt bar
    */
   extraMenuItems?: React.ReactNode;
@@ -179,10 +183,10 @@ type ModelDisplay = ModelInfo & {
 };
 
 const FALLBACK_MODELS: ModelInfo[] = [
-  { id: "default", name: "Default (recommended)", description: "Opus 4.6 with 1M context" },
-  { id: "sonnet", name: "Sonnet 4.6", description: "Best for everyday tasks" },
-  { id: "opus", name: "Opus 4.6", description: "200K context" },
-  { id: "haiku", name: "Haiku 4.5", description: "Fastest for quick answers" },
+  { id: "default", name: "Default (recommended)", description: "Opus 4.6 with 1M context", context_window: 1000000 },
+  { id: "sonnet", name: "Sonnet 4.6", description: "Best for everyday tasks", context_window: 200000 },
+  { id: "opus", name: "Opus 4.6", description: "200K context", context_window: 200000 },
+  { id: "haiku", name: "Haiku 4.5", description: "Fastest for quick answers", context_window: 200000 },
 ];
 
 function toModelDisplay(m: ModelInfo): ModelDisplay {
@@ -214,14 +218,20 @@ const FloatingPromptInputInner = (
     projectPath,
     className,
     onCancel,
+    onModelChange,
     extraMenuItems,
   }: FloatingPromptInputProps,
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
   const [prompt, setPrompt] = useState("");
   const [models, setModels] = useState<ModelDisplay[]>(FALLBACK_MODELS.map(toModelDisplay));
-  const [selectedModel, setSelectedModel] = useState<string>(defaultModel ?? "default");
+  const [selectedModel, setSelectedModelRaw] = useState<string>(defaultModel ?? "default");
   const defaultModelProp = defaultModel; // capture whether prop was explicitly passed
+  const setSelectedModel = (id: string) => {
+    setSelectedModelRaw(id);
+    const modelInfo = models.find(m => m.id === id) || FALLBACK_MODELS.find(m => m.id === id);
+    if (modelInfo) onModelChange?.(modelInfo);
+  };
   const [selectedThinkingMode, setSelectedThinkingMode] = useState<ThinkingMode>("auto");
   const [isExpanded, setIsExpanded] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -283,10 +293,14 @@ const FloatingPromptInputInner = (
         if (cancelled) return;
         if (fetched.length > 0) {
           setModels(fetched.map(toModelDisplay));
+          // Fire initial model change with context window info
+          const activeId = (savedDefault && !defaultModelProp) ? savedDefault : (defaultModel ?? "default");
+          const activeModel = fetched.find(m => m.id === activeId) || fetched[0];
+          if (activeModel) onModelChange?.(activeModel);
         }
         // Apply saved default if no explicit prop was passed
         if (savedDefault && !defaultModelProp) {
-          setSelectedModel(savedDefault);
+          setSelectedModelRaw(savedDefault);
         }
       } catch (e) {
         // keep fallback models

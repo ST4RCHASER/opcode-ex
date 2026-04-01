@@ -121,6 +121,8 @@ export interface ModelInfo {
   name: string;
   /** Brief description */
   description: string;
+  /** Context window size in tokens */
+  context_window: number;
 }
 
 // Agent API types
@@ -702,10 +704,10 @@ export const api = {
       console.error("Failed to list available models:", error);
       // Return hardcoded fallback if the backend call fails entirely
       return [
-        { id: "default", name: "Default (recommended)", description: "Opus 4.6 with 1M context" },
-        { id: "sonnet", name: "Sonnet 4.6", description: "Best for everyday tasks" },
-        { id: "opus", name: "Opus 4.6", description: "200K context" },
-        { id: "haiku", name: "Haiku 4.5", description: "Fastest for quick answers" },
+        { id: "default", name: "Default (recommended)", description: "Opus 4.6 with 1M context", context_window: 1000000 },
+        { id: "sonnet", name: "Sonnet 4.6", description: "Best for everyday tasks", context_window: 200000 },
+        { id: "opus", name: "Opus 4.6", description: "200K context", context_window: 200000 },
+        { id: "haiku", name: "Haiku 4.5", description: "Fastest for quick answers", context_window: 200000 },
       ];
     }
   },
