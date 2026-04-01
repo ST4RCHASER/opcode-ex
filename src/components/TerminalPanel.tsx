@@ -201,7 +201,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
 
   // Calculate terminal area height (total - drag handle - header - prompt bar)
   const headerHeight = 36; // drag handle (6px) + header (~30px)
-  const promptBarHeight = 80; // floating prompt input below the terminal
+  const promptBarHeight = 120; // floating prompt input + model bar below the terminal
 
   return (
     <div
