@@ -33,6 +33,9 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTrackEvent, useComponentMetrics, useWorkflowTracking } from "@/hooks";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 
+// Persist scroll positions across tab switches (survives unmount/remount)
+const scrollPositionCache = new Map<string, number>();
+
 interface ClaudeCodeSessionProps {
   /**
    * Optional session to resume (when clicking from SessionList)
@@ -187,12 +190,18 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           return false;
         }
       }
-      // Skip empty assistant messages (from streaming placeholders)
-      if (message.type === 'assistant' && message.message?.content) {
-        const hasText = message.message.content.some((c: any) => c.type === 'text' && c.text?.length > 0);
-        const hasToolUse = message.message.content.some((c: any) => c.type === 'tool_use');
-        if (!hasText && !hasToolUse) return false;
+      // Skip empty assistant messages (from streaming placeholders or no content)
+      if (message.type === 'assistant') {
+        const content = message.message?.content;
+        if (!content || (Array.isArray(content) && content.length === 0)) return false;
+        if (Array.isArray(content)) {
+          const hasText = content.some((c: any) => c.type === 'text' && c.text?.length > 0);
+          const hasToolUse = content.some((c: any) => c.type === 'tool_use');
+          if (!hasText && !hasToolUse) return false;
+        }
       }
+      // Skip empty/content-less messages of any type
+      if (!message.message && !message.subtype && message.type !== 'user') return false;
 
       // Skip meta messages that don't have meaningful content
       if (message.isMeta && !message.leafUuid && !message.summary) {
@@ -297,10 +306,22 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     onStreamingChange?.(isLoading, claudeSessionId);
   }, [isLoading, claudeSessionId, onStreamingChange]);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll to bottom when new messages arrive, or restore saved position
   useEffect(() => {
     if (displayableMessages.length > 0) {
-      // Use a more precise scrolling method to ensure content is fully visible
+      // Check if we have a saved scroll position to restore
+      const scrollKey = claudeSessionId || session?.id || projectPath;
+      const savedPos = scrollKey ? scrollPositionCache.get(scrollKey) : undefined;
+      if (savedPos !== undefined) {
+        scrollPositionCache.delete(scrollKey!);
+        setTimeout(() => {
+          if (parentRef.current) {
+            parentRef.current.scrollTop = savedPos;
+          }
+        }, 100);
+        return;
+      }
+      // Otherwise auto-scroll to bottom
       setTimeout(() => {
         const scrollElement = parentRef.current;
         if (scrollElement) {
@@ -811,10 +832,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             // When a complete assistant message arrives after streaming deltas,
             // replace the delta-built message instead of duplicating
             if (message.type === 'assistant') {
+              // Update context usage live from assistant message usage
+              const usage = message.message?.usage as any;
+              if (usage) {
+                const used = (usage.input_tokens || 0)
+                  + (usage.cache_creation_input_tokens || 0)
+                  + (usage.cache_read_input_tokens || 0)
+                  + (usage.output_tokens || 0);
+                if (used > 0) {
+                  setContextUsage(prev => ({ ...prev, used }));
+                }
+              }
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
                 if (last?.type === 'assistant') {
-                  // Replace the streamed placeholder with the final complete message
                   return [...prev.slice(0, -1), message];
                 }
                 return [...prev, message];
@@ -1300,6 +1331,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     isMountedRef.current = true;
     
     return () => {
+      // Save scroll position before unmount
+      const scrollKey = claudeSessionId || session?.id || projectPath;
+      if (scrollKey && parentRef.current) {
+        scrollPositionCache.set(scrollKey, parentRef.current.scrollTop);
+      }
       console.log('[ClaudeCodeSession] Component unmounting, cleaning up listeners');
       isMountedRef.current = false;
       isListeningRef.current = false;

@@ -623,40 +623,59 @@ pub fn create_command_with_env(program: &str) -> Command {
 
     info!("Creating command for: {}", program);
 
-    // Inherit essential environment variables from parent process
+    // Inherit all environment variables from parent process
     for (key, value) in std::env::vars() {
-        // Pass through PATH and other essential environment variables
-        if key == "PATH"
-            || key == "HOME"
-            || key == "USER"
-            || key == "SHELL"
-            || key == "LANG"
-            || key == "LC_ALL"
-            || key.starts_with("LC_")
-            || key == "NODE_PATH"
-            || key == "NVM_DIR"
-            || key == "NVM_BIN"
-            || key == "HOMEBREW_PREFIX"
-            || key == "HOMEBREW_CELLAR"
-            // Add proxy environment variables (only uppercase)
-            || key == "HTTP_PROXY"
-            || key == "HTTPS_PROXY"
-            || key == "NO_PROXY"
-            || key == "ALL_PROXY"
-        {
-            debug!("Inheriting env var: {}={}", key, value);
-            cmd.env(&key, &value);
-        }
+        cmd.env(&key, &value);
     }
 
-    // Log proxy-related environment variables for debugging
-    info!("Command will use proxy settings:");
-    if let Ok(http_proxy) = std::env::var("HTTP_PROXY") {
-        info!("  HTTP_PROXY={}", http_proxy);
+    // In production macOS apps, PATH is very limited (/usr/bin:/bin).
+    // Build a comprehensive PATH so Claude's child processes (bash, git, etc.) work.
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/nobody".to_string());
+    let current_path = std::env::var("PATH").unwrap_or_default();
+
+    let extra_paths = [
+        format!("{home}/.local/bin"),
+        format!("{home}/.cargo/bin"),
+        format!("{home}/.bun/bin"),
+        "/opt/homebrew/bin".to_string(),
+        "/opt/homebrew/sbin".to_string(),
+        "/usr/local/bin".to_string(),
+        "/usr/local/sbin".to_string(),
+        "/usr/bin".to_string(),
+        "/usr/sbin".to_string(),
+        "/bin".to_string(),
+        "/sbin".to_string(),
+    ];
+
+    // Also try to read the user's shell PATH via login shell
+    let shell_path = std::process::Command::new("/bin/bash")
+        .args(["-l", "-c", "echo $PATH"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+
+    // Merge: shell PATH + extra paths + current PATH (deduplicated)
+    let mut seen = std::collections::HashSet::new();
+    let mut final_parts: Vec<String> = Vec::new();
+    for part in shell_path
+        .split(':')
+        .chain(extra_paths.iter().map(|s| s.as_str()))
+        .chain(current_path.split(':'))
+    {
+        if !part.is_empty() && seen.insert(part.to_string()) {
+            final_parts.push(part.to_string());
+        }
     }
-    if let Ok(https_proxy) = std::env::var("HTTPS_PROXY") {
-        info!("  HTTPS_PROXY={}", https_proxy);
-    }
+    let full_path = final_parts.join(":");
+    debug!("Full PATH: {}", full_path);
+    cmd.env("PATH", full_path);
 
     // Add NVM support if the program is in an NVM directory
     if program.contains("/.nvm/versions/node/") {
