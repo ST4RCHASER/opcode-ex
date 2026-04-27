@@ -798,4 +798,16 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
   }
 };
 
-export const StreamMessage = React.memo(StreamMessageComponent);
+const StreamMessageAligned: React.FC<StreamMessageProps> = (props) => {
+  const isUser = props.message.type === "user" && !props.message.isMeta;
+  const inner = <StreamMessageComponent {...props} />;
+  return (
+    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+      <div className={isUser ? "max-w-[85%]" : "w-full"}>
+        {inner}
+      </div>
+    </div>
+  );
+};
+
+export const StreamMessage = React.memo(StreamMessageAligned);

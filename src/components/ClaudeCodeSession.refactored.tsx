@@ -134,12 +134,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       
       if (isFirstPrompt) {
         console.log('[TRACE] First prompt - calling api.executeClaudeCode');
-        await api.executeClaudeCode(projectPath, prompt, model);
+        await api.executeClaudeCode(projectPath, prompt, model, crypto.randomUUID());
         setIsFirstPrompt(false);
         console.log('[TRACE] executeClaudeCode completed');
       } else if (claudeSessionId) {
         console.log('[TRACE] Continue prompt - calling api.continueClaudeCode');
-        await api.continueClaudeCode(projectPath, prompt, model);
+        await api.continueClaudeCode(projectPath, prompt, model, crypto.randomUUID());
         console.log('[TRACE] continueClaudeCode completed');
       } else {
         console.log('[TRACE] No claude session ID for continue');

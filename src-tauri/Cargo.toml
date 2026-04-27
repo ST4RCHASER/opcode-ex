@@ -25,7 +25,7 @@ path = "src/web_main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [ "macos-private-api", "protocol-asset", "tray-icon", "image-png"] }
+tauri = { version = "2", features = [ "macos-private-api", "protocol-asset", "tray-icon", "image-png", "devtools"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"

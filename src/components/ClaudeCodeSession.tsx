@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Copy,
@@ -71,6 +71,10 @@ interface ClaudeCodeSessionProps {
    * Callback when a new session is created (for tab persistence)
    */
   onSessionCreated?: (sessionId: string, projectId: string) => void;
+  /**
+   * Whether this tab is currently active/visible (for scroll restoration)
+   */
+  isActive?: boolean;
 }
 
 /**
@@ -86,6 +90,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   onStreamingChange,
   onProjectPathChange,
   onSessionCreated,
+  isActive = true,
 }) => {
   const [projectPath] = useState(initialProjectPath || session?.project_path || "");
   const [messages, setMessages] = useState<ClaudeStreamMessage[]>([]);
@@ -128,6 +133,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: string }>>([]);
   const isMountedRef = useRef(true);
   const isListeningRef = useRef(false);
+  const launchIdRef = useRef<string | null>(null);
   const sessionStartTime = useRef<number>(Date.now());
   const isIMEComposingRef = useRef(false);
   
@@ -274,6 +280,46 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     overscan: 5,
   });
 
+  // Refs so scrollToBottom always reads the latest values (no stale closures)
+  const displayableCountRef = useRef(displayableMessages.length);
+  displayableCountRef.current = displayableMessages.length;
+  const rowVirtualizerRef = useRef(rowVirtualizer);
+  rowVirtualizerRef.current = rowVirtualizer;
+
+  // Robust scroll-to-bottom with retry — virtual lists need multiple attempts
+  // because estimated item sizes cause scrollHeight to change as items are measured.
+  const scrollCancelRef = useRef(0);
+  const scrollToBottom = useCallback(() => {
+    const token = ++scrollCancelRef.current;
+
+    const tryScroll = (attempt: number) => {
+      if (token !== scrollCancelRef.current || attempt > 10) return;
+
+      const el = parentRef.current;
+      const count = displayableCountRef.current;
+      const virt = rowVirtualizerRef.current;
+      if (!el || count === 0) return;
+
+      virt.scrollToIndex(count - 1, { align: 'end', behavior: 'auto' });
+
+      requestAnimationFrame(() => {
+        if (token !== scrollCancelRef.current || !parentRef.current) return;
+        parentRef.current.scrollTop = parentRef.current.scrollHeight;
+
+        // Verify we actually reached the bottom; retry if not
+        requestAnimationFrame(() => {
+          if (token !== scrollCancelRef.current || !parentRef.current) return;
+          const { scrollTop, scrollHeight, clientHeight } = parentRef.current;
+          if (scrollTop + clientHeight < scrollHeight - 30) {
+            setTimeout(() => tryScroll(attempt + 1), 50);
+          }
+        });
+      });
+    };
+
+    setTimeout(() => tryScroll(0), 30);
+  }, []);
+
   // Debug logging
   useEffect(() => {
     console.log('[ClaudeCodeSession] State update:', {
@@ -310,39 +356,21 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     onStreamingChange?.(isLoading, claudeSessionId);
   }, [isLoading, claudeSessionId, onStreamingChange]);
 
-  // Auto-scroll to bottom when new messages arrive, or restore saved position
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (displayableMessages.length > 0) {
-      // Check if we have a saved scroll position to restore
-      const scrollKey = claudeSessionId || session?.id || projectPath;
-      const savedPos = scrollKey ? scrollPositionCache.get(scrollKey) : undefined;
-      if (savedPos !== undefined) {
-        scrollPositionCache.delete(scrollKey!);
-        setTimeout(() => {
-          if (parentRef.current) {
-            parentRef.current.scrollTop = savedPos;
-          }
-        }, 100);
-        return;
-      }
-      // Otherwise auto-scroll to bottom
-      setTimeout(() => {
-        const scrollElement = parentRef.current;
-        if (scrollElement) {
-          // First, scroll using virtualizer to get close to the bottom
-          rowVirtualizer.scrollToIndex(displayableMessages.length - 1, { align: 'end', behavior: 'auto' });
-
-          // Then use direct scroll to ensure we reach the absolute bottom
-          requestAnimationFrame(() => {
-            scrollElement.scrollTo({
-              top: scrollElement.scrollHeight,
-              behavior: 'smooth'
-            });
-          });
-        }
-      }, 50);
+      scrollToBottom();
     }
-  }, [displayableMessages.length, rowVirtualizer]);
+  }, [displayableMessages.length, scrollToBottom]);
+
+  // Scroll to latest when tab becomes active (hidden→visible resets scrollTop to 0)
+  const wasActiveRef = useRef(isActive);
+  useEffect(() => {
+    if (isActive && !wasActiveRef.current) {
+      scrollToBottom();
+    }
+    wasActiveRef.current = isActive;
+  }, [isActive, scrollToBottom]);
 
   // Calculate total tokens from messages
   useEffect(() => {
@@ -419,29 +447,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
       // After loading history, we're continuing a conversation
       setIsFirstPrompt(false);
-      
-      // Scroll to bottom after loading history
-      setTimeout(() => {
-        if (loadedMessages.length > 0) {
-          const scrollElement = parentRef.current;
-          if (scrollElement) {
-            // Use the same improved scrolling method
-            rowVirtualizer.scrollToIndex(loadedMessages.length - 1, { align: 'end', behavior: 'auto' });
-            requestAnimationFrame(() => {
-              scrollElement.scrollTo({
-                top: scrollElement.scrollHeight,
-                behavior: 'auto'
-              });
-            });
-          }
-        }
-      }, 100);
+      // Scroll handled by auto-scroll effect when displayableMessages.length changes
     } catch (err) {
-      console.error("Failed to load session history:", err);
-      // Only show error if no messages are loaded yet (avoid flashing error on secondary attempts)
-      if (messages.length === 0) {
-        setError("Failed to load session history");
-      }
+      console.warn("Could not load session history:", err);
+      // Session file may no longer exist — treat as a fresh session
+      // so the next prompt creates a new session instead of trying to resume
+      setIsFirstPrompt(true);
     } finally {
       setIsLoading(false);
     }
@@ -574,82 +585,40 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         // Clean up previous listeners
         unlistenRefs.current.forEach(unlisten => unlisten());
         unlistenRefs.current = [];
-        
+
         // Mark as setting up listeners
         isListeningRef.current = true;
-        
+
         // --------------------------------------------------------------------
-        // 1️⃣  Event Listener Setup Strategy
+        // Event Listener Setup: scoped by launch_id from the very first event
         // --------------------------------------------------------------------
-        // Claude Code may emit a *new* session_id even when we pass --resume. If
-        // we listen only on the old session-scoped channel we will miss the
-        // stream until the user navigates away & back. To avoid this we:
-        //   • Always start with GENERIC listeners (no suffix) so we catch the
-        //     very first "system:init" message regardless of the session id.
-        //   • Once that init message provides the *actual* session_id, we
-        //     dynamically switch to session-scoped listeners and stop the
-        //     generic ones to prevent duplicate handling.
-        // --------------------------------------------------------------------
+        const launchId = crypto.randomUUID();
+        launchIdRef.current = launchId;
 
-        console.log('[ClaudeCodeSession] Setting up generic event listeners first');
+        console.log('[ClaudeCodeSession] Setting up launch-scoped listeners for', launchId);
 
-        let currentSessionId: string | null = claudeSessionId || effectiveSession?.id || null;
-
-        // Helper to attach session-specific listeners **once we are sure**
-        const attachSessionSpecificListeners = async (sid: string) => {
-          console.log('[ClaudeCodeSession] Attaching session-specific listeners for', sid);
-
-          const specificOutputUnlisten = await listen(`claude-output:${sid}`, (evt: any) => {
-            handleStreamMessage(evt.payload);
-          });
-
-          const specificErrorUnlisten = await listen(`claude-error:${sid}`, (evt: any) => {
-            console.error('Claude error (scoped):', evt.payload);
-            setError(evt.payload);
-          });
-
-          const specificCompleteUnlisten = await listen(`claude-complete:${sid}`, (evt: any) => {
-            console.log('[ClaudeCodeSession] Received claude-complete (scoped):', evt.payload);
-            processComplete(evt.payload);
-          });
-
-          // Replace existing unlisten refs with these new ones (after cleaning up)
-          unlistenRefs.current.forEach((u) => u());
-          unlistenRefs.current = [specificOutputUnlisten, specificErrorUnlisten, specificCompleteUnlisten];
-        };
-
-        // Generic listeners (catch-all)
-        const genericOutputUnlisten = await listen('claude-output', async (event: any) => {
+        const outputUnlisten = await listen(`claude-output:${launchId}`, async (event: any) => {
           handleStreamMessage(event.payload);
 
-          // Attempt to extract session_id on the fly (for the very first init)
+          // Extract session_id from init message for state tracking
           try {
             const msg = JSON.parse(event.payload) as ClaudeStreamMessage;
             if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
-              if (!currentSessionId || currentSessionId !== msg.session_id) {
-                console.log('[ClaudeCodeSession] Detected new session_id from generic listener:', msg.session_id);
-                currentSessionId = msg.session_id;
-                setClaudeSessionId(msg.session_id);
+              console.log('[ClaudeCodeSession] Detected session_id:', msg.session_id);
+              setClaudeSessionId(msg.session_id);
 
-                // If we haven't extracted session info before, do it now
-                if (!extractedSessionInfo) {
-                  const projectId = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
-                  setExtractedSessionInfo({ sessionId: msg.session_id, projectId });
-                  
-                  // Save session data for restoration
-                  SessionPersistenceService.saveSession(
-                    msg.session_id,
-                    projectId,
-                    projectPath,
-                    messages.length
-                  );
+              if (!extractedSessionInfo) {
+                const projectId = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
+                setExtractedSessionInfo({ sessionId: msg.session_id, projectId });
 
-                  // Notify parent tab so sessionId is persisted
-                  onSessionCreated?.(msg.session_id, projectId);
-                }
+                SessionPersistenceService.saveSession(
+                  msg.session_id,
+                  projectId,
+                  projectPath,
+                  messages.length
+                );
 
-                // Switch to session-specific listeners
-                await attachSessionSpecificListeners(msg.session_id);
+                onSessionCreated?.(msg.session_id, projectId);
               }
             }
           } catch {
@@ -962,18 +931,17 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           }
         };
 
-        const genericErrorUnlisten = await listen('claude-error', (evt: any) => {
+        const errorUnlisten = await listen(`claude-error:${launchId}`, (evt: any) => {
           console.error('Claude error:', evt.payload);
           setError(evt.payload);
         });
 
-        const genericCompleteUnlisten = await listen('claude-complete', (evt: any) => {
-          console.log('[ClaudeCodeSession] Received claude-complete (generic):', evt.payload);
+        const completeUnlisten = await listen(`claude-complete:${launchId}`, (evt: any) => {
+          console.log('[ClaudeCodeSession] Received claude-complete:', evt.payload);
           processComplete(evt.payload);
         });
 
-        // Store the generic unlisteners for now; they may be replaced later.
-        unlistenRefs.current = [genericOutputUnlisten, genericErrorUnlisten, genericCompleteUnlisten];
+        unlistenRefs.current = [outputUnlisten, errorUnlisten, completeUnlisten];
 
         // --------------------------------------------------------------------
         // 2️⃣  Auto-checkpoint logic moved after listener setup (unchanged)
@@ -1033,18 +1001,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           session_age_ms: sessionAge
         });
 
-        // Execute the appropriate command
+        // Execute the appropriate command (pass launchId for event scoping)
+        const lid = launchIdRef.current!;
+        console.log('[ClaudeCodeSession] Dispatch:', { lid, effectiveSession: !!effectiveSession, isFirstPrompt, projectPath });
         if (effectiveSession && !isFirstPrompt) {
           console.log('[ClaudeCodeSession] Resuming session:', effectiveSession.id);
           trackEvent.sessionResumed(effectiveSession.id);
           trackEvent.modelSelected(model);
-          await api.resumeClaudeCode(projectPath, effectiveSession.id, prompt, model);
+          await api.resumeClaudeCode(projectPath, effectiveSession.id, prompt, model, lid);
         } else {
           console.log('[ClaudeCodeSession] Starting new session');
           setIsFirstPrompt(false);
           trackEvent.sessionCreated(model, 'prompt_input');
           trackEvent.modelSelected(model);
-          await api.executeClaudeCode(projectPath, prompt, model);
+          await api.executeClaudeCode(projectPath, prompt, model, lid);
         }
       }
     } catch (err) {
@@ -1152,7 +1122,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       const sessionStartTime = messages.length > 0 ? messages[0].timestamp || Date.now() : Date.now();
       const duration = Date.now() - sessionStartTime;
       
-      await api.cancelClaudeExecution(claudeSessionId);
+      await api.cancelClaudeExecution(claudeSessionId, launchIdRef.current ?? undefined);
       
       // Calculate metrics for enhanced analytics
       const metrics = sessionMetrics.current;
@@ -1658,24 +1628,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => {
-                        // Use the improved scrolling method for manual scroll to bottom
-                        if (displayableMessages.length > 0) {
-                          const scrollElement = parentRef.current;
-                          if (scrollElement) {
-                            // First, scroll using virtualizer to get close to the bottom
-                            rowVirtualizer.scrollToIndex(displayableMessages.length - 1, { align: 'end', behavior: 'auto' });
-
-                            // Then use direct scroll to ensure we reach the absolute bottom
-                            requestAnimationFrame(() => {
-                              scrollElement.scrollTo({
-                                top: scrollElement.scrollHeight,
-                                behavior: 'smooth'
-                              });
-                            });
-                          }
-                        }
-                      }}
+                      onClick={() => scrollToBottom()}
                       className="px-3 py-2 hover:bg-accent rounded-none"
                     >
                       <ChevronDown className="h-4 w-4" />
@@ -1858,21 +1811,19 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             />
           </div>
 
-          {/* Terminal Panel — anchored to bottom, prompt sits above it */}
-          {showTerminal && (
-            <div className={cn(
-              "fixed bottom-0 left-0 right-0 z-40 transition-all duration-300",
-              showTimeline && "sm:right-96"
-            )}>
-              <TerminalPanel
-                projectPath={projectPath}
-                isOpen={showTerminal}
-                onClose={() => setShowTerminal(false)}
-                height={terminalHeight}
-                onHeightChange={setTerminalHeight}
-              />
-            </div>
-          )}
+          {/* Terminal Panel — anchored to bottom, always mounted to preserve state */}
+          <div className={cn(
+            "fixed bottom-0 left-0 right-0 z-40 transition-all duration-300",
+            showTimeline && "sm:right-96"
+          )} style={{ display: showTerminal ? undefined : "none" }}>
+            <TerminalPanel
+              projectPath={projectPath}
+              isOpen={showTerminal}
+              onClose={() => setShowTerminal(false)}
+              height={terminalHeight}
+              onHeightChange={setTerminalHeight}
+            />
+          </div>
 
           {/* Token Counter - positioned under the Send button */}
           {totalTokens > 0 && (

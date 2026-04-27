@@ -257,6 +257,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                 return undefined;
               })() : undefined)}
               initialProjectPath={tab.initialProjectPath || tab.sessionId}
+              isActive={isActive}
               onBack={() => {
                 // Go back to projects view in the same tab
                 updateTab(tab.id, {

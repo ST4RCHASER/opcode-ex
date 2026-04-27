@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, Info, MoreVertical } from 'lucide-react';
+import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, Info, MoreVertical, Bug } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { invoke } from '@tauri-apps/api/core';
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
 
 interface CustomTitlebarProps {
@@ -238,6 +239,17 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                       <span>About</span>
                     </button>
                   )}
+                  <div className="border-t border-border my-1" />
+                  <button
+                    onClick={() => {
+                      invoke('toggle_devtools').catch(() => {});
+                      setIsDropdownOpen(false);
+                    }}
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-3"
+                  >
+                    <Bug size={14} />
+                    <span>DevTools</span>
+                  </button>
                 </div>
               </div>
             )}

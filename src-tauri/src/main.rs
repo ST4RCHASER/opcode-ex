@@ -56,6 +56,17 @@ fn main() {
     // Initialize logger
     env_logger::init();
 
+    #[tauri::command]
+    async fn toggle_devtools(app: tauri::AppHandle) {
+        if let Some(window) = app.get_webview_window("main") {
+            if window.is_devtools_open() {
+                window.close_devtools();
+            } else {
+                window.open_devtools();
+            }
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -150,6 +161,13 @@ fn main() {
 
             // Initialize Claude process state
             app.manage(ClaudeProcessState::default());
+
+            // Open devtools in debug builds
+            #[cfg(debug_assertions)]
+            {
+                let window = app.get_webview_window("main").unwrap();
+                window.open_devtools();
+            }
 
             // Apply window vibrancy with rounded corners on macOS
             #[cfg(target_os = "macos")]
@@ -300,6 +318,7 @@ fn main() {
             terminal_write,
             terminal_resize,
             terminal_kill,
+            toggle_devtools,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

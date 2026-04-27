@@ -1070,30 +1070,29 @@ export const api = {
   /**
    * Executes a new interactive Claude Code session with streaming output
    */
-  async executeClaudeCode(projectPath: string, prompt: string, model: string): Promise<void> {
-    return apiCall("execute_claude_code", { projectPath, prompt, model });
+  async executeClaudeCode(projectPath: string, prompt: string, model: string, launchId: string): Promise<void> {
+    return apiCall("execute_claude_code", { projectPath, prompt, model, launchId });
   },
 
   /**
    * Continues an existing Claude Code conversation with streaming output
    */
-  async continueClaudeCode(projectPath: string, prompt: string, model: string): Promise<void> {
-    return apiCall("continue_claude_code", { projectPath, prompt, model });
+  async continueClaudeCode(projectPath: string, prompt: string, model: string, launchId: string): Promise<void> {
+    return apiCall("continue_claude_code", { projectPath, prompt, model, launchId });
   },
 
   /**
    * Resumes an existing Claude Code session by ID with streaming output
    */
-  async resumeClaudeCode(projectPath: string, sessionId: string, prompt: string, model: string): Promise<void> {
-    return apiCall("resume_claude_code", { projectPath, sessionId, prompt, model });
+  async resumeClaudeCode(projectPath: string, sessionId: string, prompt: string, model: string, launchId: string): Promise<void> {
+    return apiCall("resume_claude_code", { projectPath, sessionId, prompt, model, launchId });
   },
 
   /**
    * Cancels the currently running Claude Code execution
-   * @param sessionId - Optional session ID to cancel a specific session
    */
-  async cancelClaudeExecution(sessionId?: string): Promise<void> {
-    return apiCall("cancel_claude_execution", { sessionId });
+  async cancelClaudeExecution(sessionId?: string, launchId?: string): Promise<void> {
+    return apiCall("cancel_claude_execution", { sessionId, launchId });
   },
 
   /**

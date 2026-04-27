@@ -67,7 +67,8 @@ import { motion, AnimatePresence } from "framer-motion";
 /**
  * Widget for TodoWrite tool - displays a beautiful TODO list
  */
-export const TodoWidget: React.FC<{ todos: any[]; result?: any }> = ({ todos, result: _result }) => {
+export const TodoWidget: React.FC<{ todos: any[]; result?: any }> = ({ todos: rawTodos, result: _result }) => {
+  const todos = Array.isArray(rawTodos) ? rawTodos : [];
   const statusIcons = {
     completed: <CheckCircle2 className="h-4 w-4 text-green-500" />,
     in_progress: <Clock className="h-4 w-4 text-blue-500 animate-pulse" />,
